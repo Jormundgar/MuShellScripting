@@ -1,0 +1,99 @@
+#!/bin/bash
+
+WORKING_DIRECTORY=~/Workspace
+PROJECT_NAME="spring-starter"
+GIT_REPOSITORY_PASS=git@github.com:dmdev2020/spring-starter.git
+DB_CONTAINER_NAME="spring-postgres"
+PASSWORD=pass
+USERNAME=postgres
+DATABASE=postgres
+
+help() {
+  echo "
+  Usage:
+    ./application init - init working directory and database
+    ./application clean - clean working directory and stop database
+    ./application build - run jUnit tests to check app health (-skipTests arg to skip tests) and run jar
+    ./application up - launch application
+    "
+}
+
+up() {
+  cd "${WORKING_DIRECTORY}/${PROJECT_NAME}/build/libs" || exit
+  java -jar spring-starter-*.jar
+}
+
+build() {
+  cd "${WORKING_DIRECTORY}/${PROJECT_NAME}" || exit
+
+  ./gradlew clean
+
+  if [[ "$1" = "-skipTests" ]] || ./gradlew test; then
+    echo "Application is building..."
+    ./gradlew bootJar
+  else
+    echo "Tests failed. See test report or send -skipTests arg to skip tests"
+  fi
+}
+
+clean() {
+
+#  remove working directory
+  echo "Removing working directory ${WORKING_DIRECTORY}..."
+  rm -rf "${WORKING_DIRECTORY}"
+
+#  stop docker container (PostgreSQL)
+  if docker ps | grep "${DB_CONTAINER_NAME}"; then
+    echo "Stopping container name ${DB_CONTAINER_NAME}..."
+    docker stop "${DB_CONTAINER_NAME}"
+  fi
+}
+
+init() {
+
+# init working directory
+mkdir -p "${WORKING_DIRECTORY}"
+cd "${WORKING_DIRECTORY}" || exit
+
+# git clone
+if [[ ! -d "${PROJECT_NAME}" ]]; then
+  git clone "${GIT_REPOSITORY_PASS}"
+fi
+cd "${PROJECT_NAME}" || exit
+
+#  PostgreSQL
+  docker pull postgres
+  if docker ps -a | grep "${DB_CONTAINER_NAME}"; then
+    docker start "${DB_CONTAINER_NAME}"
+  else
+    docker run --name "${DB_CONTAINER_NAME}" \
+        -e POSTGRES_PASSWORD="${PASSWORD}" \
+        -e POSTGRES_USER="${USERNAME}" \
+        -e POSTGRES_DB="${DATABASE}" \
+        -p 5433:5432 \
+        -d postgres
+  fi
+
+}
+
+case $1 in
+help)
+  help
+  ;;
+init)
+  init
+  ;;
+clean)
+  clean
+  ;;
+build)
+  build $2
+  ;;
+up)
+  up
+  ;;
+*)
+  echo "$1 command is not valid"
+  exit 1
+  ;;
+esac
